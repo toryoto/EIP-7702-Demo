@@ -1,12 +1,13 @@
 export interface AuthorizationTuple {
   chainId: number;
-  address: string;
+  address: string; // 実行委託先のスマートコントラクトアドレス
   nonce: number;
   yParity: number;
   r: string;
   s: string;
 }
 
+// EIP-7702のトランザクションの型は従来のEthereumのトランザクションプ＋authorizationList
 export interface EIP7702TransactionRequest {
   chainId: number;
   nonce: number;
