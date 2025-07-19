@@ -30,7 +30,7 @@ contract MinimalEIP7702Delegate {
      * @dev EOA自身またはEntryPointからの呼び出しのみ許可
      * EIP-7702では委譲されたEOA自身（address(this)）が呼び出し元になる
      */
-    modifier onlyAuthorized() {
+    modifier onlyAuthorized() virtual {
         require(
             msg.sender == address(this),
             "MinimalDelegate: not authorized"
