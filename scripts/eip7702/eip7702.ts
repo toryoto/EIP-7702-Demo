@@ -1,6 +1,6 @@
 import { ethers } from "ethers";
 import { EIP7702Helper } from "../utils/eip7702Helpers";
-import { EIP7702_CONFIG, TOKEN_AMOUNTS } from "../utils/constants";
+import { EIP7702_CONFIG } from "../utils/constants";
 import { MinimalEIP7702Delegate_ADDRESS, USDC_ADDRESS } from "../utils/addresses";
 import { USDC_ABI } from "../utils/abis/usdc";
 import dotenv from "dotenv";
@@ -21,10 +21,12 @@ async function main() {
   const receiverKey = new ethers.SigningKey(receiverPrivateKey);
   const receiverAddress = ethers.computeAddress(receiverKey);
 
-  // 現在のEOAのナンスを取得
-  const nonce = await provider.getTransactionCount(senderAddress);
+  const wallet = new ethers.Wallet(senderPrivateKey, provider);
+  const currentNonce = await wallet.getNonce();
+  
+  const transactionNonce = currentNonce;
+  const authorizationNonce = currentNonce + 1;
 
-  // 委任先のアドレス（EIP-7702デリゲートコントラクト）
   const delegateAddress = MinimalEIP7702Delegate_ADDRESS
 
   // Authorization署名を作成
@@ -32,7 +34,7 @@ async function main() {
   const authContent = ethers.encodeRlp([
     ethers.stripZerosLeft(ethers.toBeHex(EIP7702_CONFIG.CHAIN_IDS.SEPOLIA)),
     delegateAddress,
-    ethers.stripZerosLeft(ethers.toBeHex(nonce))
+    ethers.stripZerosLeft(ethers.toBeHex(authorizationNonce))
   ]);
   
   const authHash = ethers.keccak256(ethers.concat([MAGIC, authContent]));
@@ -43,7 +45,7 @@ async function main() {
   const senderAuthorizationList = [
     ethers.stripZerosLeft(ethers.toBeHex(EIP7702_CONFIG.CHAIN_IDS.SEPOLIA)),
     delegateAddress, // 委任先コントラクトアドレス
-    ethers.stripZerosLeft(ethers.toBeHex(nonce)),
+    ethers.stripZerosLeft(ethers.toBeHex(authorizationNonce)),
     ethers.stripZerosLeft(ethers.toBeHex(senderAuthSignature.yParity)),
     senderAuthSignature.r,
     senderAuthSignature.s,
@@ -57,15 +59,15 @@ async function main() {
 
   // Delegate Contractのexecuteを呼び出すためのインターフェース
   const delegationInterface = new ethers.Interface([
-    "function execute((address to, uint256 value, bytes data) call) external payable",
+    "function execute((address to, uint256 value, bytes data) calldata calls) external payable",
   ]);
 
   // Delegate Contractのexecuteを呼び出す際に渡すデータ
   const executeCallData = delegationInterface.encodeFunctionData("execute", [
     {
-        to: USDC_ADDRESS,
-        value: ethers.parseEther("0"),
-        data: transferData
+      to: USDC_ADDRESS,
+      value: ethers.parseEther("0"),
+      data: transferData
     }
   ]);
 
@@ -75,7 +77,7 @@ async function main() {
   // トランザクションデータを構築
   const transactionData: ethers.RlpStructuredDataish = [
     ethers.toBeHex(EIP7702_CONFIG.CHAIN_IDS.SEPOLIA),
-    ethers.stripZerosLeft(ethers.toBeHex(nonce)),
+    ethers.stripZerosLeft(ethers.toBeHex(transactionNonce)),
     ethers.stripZerosLeft(ethers.toBeHex(feeData.maxPriorityFeePerGas!)), // maxPriorityFeePerGas
     ethers.stripZerosLeft(ethers.toBeHex(feeData.maxFeePerGas!)), // maxFeePerGas
     ethers.stripZerosLeft(ethers.toBeHex(1000000)), // gasLimit
@@ -93,7 +95,6 @@ async function main() {
     const currentAllowance = await usdcContract.allowance(senderAddress, delegateAddress);
     console.log("🔐 Current Allowance:", ethers.formatUnits(currentAllowance, 6), "USDC");
 
-    // 送信者が直接署名するトランザクションを送信
     const txHash = await EIP7702Helper.sendSenderSignedTransaction(
       provider,
       senderKey,
@@ -113,15 +114,21 @@ async function main() {
     const receipt = await provider.waitForTransaction(txHash);
     console.log("✅ Transaction confirmed in block:", receipt?.blockNumber);
 
+    // 🔧 デバッグ情報：Authorization Validityを確認できるように
+    console.log("\n📋 Transaction Receipt Details:");
+    console.log("Status:", receipt?.status === 1 ? "Success" : "Failed");
+    console.log("Gas Used:", receipt?.gasUsed.toString());
+    
     // 実行後の状態を確認
     const newBalance = await usdcContract.balanceOf(senderAddress);
-    // const newAllowance = await usdcContract.allowance(senderAddress, delegateAddress);
     const receiverBalance = await usdcContract.balanceOf(receiverAddress);
     
     console.log("\n📊 Transaction Results:");
     console.log("New Sender Balance:", ethers.formatUnits(newBalance, 6), "USDC");
-    // console.log("New Allowance:", ethers.formatUnits(newAllowance, 6), "USDC");
     console.log("Receiver Balance:", ethers.formatUnits(receiverBalance, 6), "USDC");
+    console.log("Transfer Amount:", ethers.formatUnits(currentBalance - newBalance, 6), "USDC");
+
+    console.log("\n✅ Authorization should now show validity: TRUE in explorer!");
 
   } catch (error) {
     console.error("❌ Transaction failed:", error);
@@ -131,4 +138,4 @@ async function main() {
 main().catch((error) => {
   console.error("❌ Script failed:", error);
   process.exit(1);
-}); 
+});

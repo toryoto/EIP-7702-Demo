@@ -29,6 +29,8 @@ const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL, {
 const main = async () => {
     // 送信者のナンスを取得
   const senderNonce = await provider.getTransactionCount(SENDER_ADDRESS);
+  const wallet = new ethers.Wallet(SPONSOR_KEY, provider);
+  const sponsorNonce = await wallet.getNonce();
 
   // MAGIC(固定値)とethers.encodeRlp([chainId, Delegate Contractのアドレス, SenderのNonce])を連結してRLPエンコード
   const MAGIC = "0x05";
@@ -73,7 +75,6 @@ const main = async () => {
     }
   ]);
 
-  const sponsorNonce = await provider.getTransactionCount(SPONSOR_ADDRESS);
   const feeData = await provider.getFeeData();
 
   const unsignedTx: ethers.RlpStructuredDataish = [
