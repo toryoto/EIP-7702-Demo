@@ -12,7 +12,7 @@ contract ERC4337CompatibleDelegate is MinimalEIP7702Delegate {
      * @dev 承認された送信者からの実行を許可
      * EIP-7702では委譲されたEOA自身、ERC-4337ではEntryPointからの呼び出しを許可
      */
-    modifier onlyAuthorized() override {
+    modifier onlyAuthorized() {
         require(
             msg.sender == address(this) ||  // EIP-7702: 委譲されたEOA自身
             msg.sender == ENTRY_POINT,      // ERC-4337: EntryPoint

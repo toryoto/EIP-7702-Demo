@@ -59,16 +59,14 @@ async function main() {
 
   // Delegate Contractのexecuteを呼び出すためのインターフェース
   const delegationInterface = new ethers.Interface([
-    "function execute((address to, uint256 value, bytes data) calldata calls) external payable",
+    "function execute(address target, uint256 value, bytes data) external",
   ]);
 
   // Delegate Contractのexecuteを呼び出す際に渡すデータ
   const executeCallData = delegationInterface.encodeFunctionData("execute", [
-    {
-      to: USDC_ADDRESS,
-      value: ethers.parseEther("0"),
-      data: transferData
-    }
+    USDC_ADDRESS,
+    ethers.parseEther("0"),
+    transferData
   ]);
 
   // ガス代情報を取得
