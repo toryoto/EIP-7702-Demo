@@ -1,7 +1,7 @@
 import { ethers } from "ethers";
 import { EIP7702Helper } from "../utils/eip7702Helpers";
 import { EIP7702_CONFIG, GAS_SETTINGS, TOKEN_AMOUNTS } from "../utils/constants";
-import { EIP7702TransactionRequest } from "../utils/types";
+import { AuthorizationTuple, EIP7702TransactionRequest } from "../utils/types";
 import { MinimalEIP7702Delegate_ADDRESS, USDC_ADDRESS } from "../utils/addresses";
 import { USDC_ABI } from "../utils/abis/usdc";
 import dotenv from "dotenv";
@@ -29,22 +29,29 @@ async function main() {
   const delegateAddress = MinimalEIP7702Delegate_ADDRESS
 
   // Authorization署名を作成
-  const authorization = await EIP7702Helper.createAuthorizationSignature(
-    senderKey,
-    EIP7702_CONFIG.CHAIN_IDS.SEPOLIA,
+  const MAGIC = "0x05";
+  const authContent = ethers.encodeRlp([
+    ethers.stripZerosLeft(ethers.toBeHex(EIP7702_CONFIG.CHAIN_IDS.SEPOLIA)),
     delegateAddress,
-    nonce
-  );
+    ethers.stripZerosLeft(ethers.toBeHex(nonce))
+  ]);
+  const authHash = ethers.keccak256(ethers.concat([MAGIC, authContent]));
+  const senderAuthSignature = senderKey.sign(authHash);
 
-  // USDCのapproveとtransferのデータ準備
+  // EIP-7702のトランザクションタイプで追加されたauthorization_list
+  // ([chain_id, address, nonce, y_parity, r, s])の順に整列
+  const senderAuthorizationList: AuthorizationTuple = {
+    chainId: EIP7702_CONFIG.CHAIN_IDS.SEPOLIA,
+    address: delegateAddress, // 委任先コントラクトアドレス
+    nonce: ethers.stripZerosLeft(ethers.toBeHex(nonce)),
+    yParity: ethers.stripZerosLeft(ethers.toBeHex(senderAuthSignature.yParity)),
+    r: senderAuthSignature.r,
+    s: senderAuthSignature.s,
+  };
+
+  // USDCのtransferのデータ準備
   const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
-  // const approveAmount = TOKEN_AMOUNTS.TRANSFER_AMOUNT; // 10 USDC
   const transferAmount = TOKEN_AMOUNTS.TRANSFER_AMOUNT;
-
-  // const approveData = usdcContract.interface.encodeFunctionData("approve", [
-  //   delegateAddress,
-  //   approveAmount
-  // ]);
 
   const transferData = usdcContract.interface.encodeFunctionData("transfer", [
     receiverAddress,
@@ -78,7 +85,7 @@ async function main() {
     value: "0", // ETH送金の場合は金額を設定
     data: executeBatchData, // コントラクト呼び出しの場合はデータを設定
     accessList: [],
-    authorizationList: [authorization],
+    authorizationList: [senderAuthorizationList],
   };
 
   try {

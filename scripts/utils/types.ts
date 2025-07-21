@@ -1,8 +1,8 @@
 export interface AuthorizationTuple {
   chainId: number;
   address: string; // 実行委託先のスマートコントラクトアドレス
-  nonce: number;
-  yParity: number;
+  nonce: string;
+  yParity: string;
   r: string;
   s: string;
 }
