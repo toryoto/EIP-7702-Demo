@@ -1,6 +1,5 @@
 import { ethers } from "ethers";
 import { EIP7702_CONFIG } from "./constants";
-import { AuthorizationTuple } from "./types";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -73,9 +72,7 @@ export class EIP7702Helper {
   ): Promise<string> {
     try {
       const rawTransaction = this.buildSignedTransaction(senderKey, transactionData);
-      const txHash = await provider.send("eth_sendRawTransaction", [
-        rawTransaction,
-      ]);
+      const txHash = await provider.send("eth_sendRawTransaction", [rawTransaction]);
       console.log("✅ Transaction sent successfully:", txHash);
       return txHash;
     } catch (error) {

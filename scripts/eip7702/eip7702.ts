@@ -1,7 +1,6 @@
 import { ethers } from "ethers";
 import { EIP7702Helper } from "../utils/eip7702Helpers";
-import { EIP7702_CONFIG, GAS_SETTINGS, TOKEN_AMOUNTS } from "../utils/constants";
-import { AuthorizationTuple, EIP7702TransactionRequest } from "../utils/types";
+import { EIP7702_CONFIG, TOKEN_AMOUNTS } from "../utils/constants";
 import { MinimalEIP7702Delegate_ADDRESS, USDC_ADDRESS } from "../utils/addresses";
 import { USDC_ABI } from "../utils/abis/usdc";
 import dotenv from "dotenv";
@@ -35,58 +34,57 @@ async function main() {
     delegateAddress,
     ethers.stripZerosLeft(ethers.toBeHex(nonce))
   ]);
+  
   const authHash = ethers.keccak256(ethers.concat([MAGIC, authContent]));
   const senderAuthSignature = senderKey.sign(authHash);
 
   // EIP-7702のトランザクションタイプで追加されたauthorization_list
   // ([chain_id, address, nonce, y_parity, r, s])の順に整列
-  const senderAuthorizationList: AuthorizationTuple = {
-    chainId: EIP7702_CONFIG.CHAIN_IDS.SEPOLIA,
-    address: delegateAddress, // 委任先コントラクトアドレス
-    nonce: ethers.stripZerosLeft(ethers.toBeHex(nonce)),
-    yParity: ethers.stripZerosLeft(ethers.toBeHex(senderAuthSignature.yParity)),
-    r: senderAuthSignature.r,
-    s: senderAuthSignature.s,
-  };
-
-  // USDCのtransferのデータ準備
-  const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
-  const transferAmount = TOKEN_AMOUNTS.TRANSFER_AMOUNT;
-
-  const transferData = usdcContract.interface.encodeFunctionData("transfer", [
-    receiverAddress,
-    transferAmount
-  ]);
-
-  // バッチ実行用のCallデータを作成
-  const batchCalls = [
-    {
-      target: USDC_ADDRESS,
-      value: "0", 
-      data: transferData
-    }
+  const senderAuthorizationList = [
+    ethers.stripZerosLeft(ethers.toBeHex(EIP7702_CONFIG.CHAIN_IDS.SEPOLIA)),
+    delegateAddress, // 委任先コントラクトアドレス
+    ethers.stripZerosLeft(ethers.toBeHex(nonce)),
+    ethers.stripZerosLeft(ethers.toBeHex(senderAuthSignature.yParity)),
+    senderAuthSignature.r,
+    senderAuthSignature.s,
   ];
 
-  // デリゲートコントラクトのexecuteBatch関数を呼び出すデータを作成
-  const delegateInterface = new ethers.Interface([
-    "function executeBatch(tuple(address target, uint256 value, bytes data)[] calls) external"
+  const usdcContract = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
+  const transferData = usdcContract.interface.encodeFunctionData("transfer", [
+    receiverAddress,
+    ethers.parseUnits("10", 6),
   ]);
-  
-  const executeBatchData = delegateInterface.encodeFunctionData("executeBatch", [batchCalls]);
+
+  // Delegate Contractのexecuteを呼び出すためのインターフェース
+  const delegationInterface = new ethers.Interface([
+    "function execute((address to, uint256 value, bytes data) call) external payable",
+  ]);
+
+  // Delegate Contractのexecuteを呼び出す際に渡すデータ
+  const executeCallData = delegationInterface.encodeFunctionData("execute", [
+    {
+        to: USDC_ADDRESS,
+        value: ethers.parseEther("0"),
+        data: transferData
+    }
+  ]);
+
+  // ガス代情報を取得
+  const feeData = await provider.getFeeData();
 
   // トランザクションデータを構築
-  const transactionData: EIP7702TransactionRequest = {
-    chainId: EIP7702_CONFIG.CHAIN_IDS.SEPOLIA,
-    nonce: nonce,
-    maxPriorityFeePerGas: GAS_SETTINGS.MAX_PRIORITY_FEE_PER_GAS,
-    maxFeePerGas: GAS_SETTINGS.MAX_FEE_PER_GAS,
-    gasLimit: GAS_SETTINGS.GAS_LIMIT,
-    to: delegateAddress,
-    value: "0", // ETH送金の場合は金額を設定
-    data: executeBatchData, // コントラクト呼び出しの場合はデータを設定
-    accessList: [],
-    authorizationList: [senderAuthorizationList],
-  };
+  const transactionData: ethers.RlpStructuredDataish = [
+    ethers.toBeHex(EIP7702_CONFIG.CHAIN_IDS.SEPOLIA),
+    ethers.stripZerosLeft(ethers.toBeHex(nonce)),
+    ethers.stripZerosLeft(ethers.toBeHex(feeData.maxPriorityFeePerGas!)), // maxPriorityFeePerGas
+    ethers.stripZerosLeft(ethers.toBeHex(feeData.maxFeePerGas!)), // maxFeePerGas
+    ethers.stripZerosLeft(ethers.toBeHex(1000000)), // gasLimit
+    senderAddress,
+    ethers.stripZerosLeft(ethers.toBeHex(0)), // value
+    executeCallData, // data
+    [], // accessList
+    [senderAuthorizationList], // authorizationList
+  ];
 
   try {
     const currentBalance = await usdcContract.balanceOf(senderAddress);
@@ -108,8 +106,6 @@ async function main() {
     console.log("Receiver Address:", receiverAddress);
     console.log("Delegate Contract:", delegateAddress);
     console.log("USDC Contract:", USDC_ADDRESS);
-    // console.log("Approve Amount:", ethers.formatUnits(approveAmount, 6), "USDC");
-    console.log("Transfer Amount:", ethers.formatUnits(transferAmount, 6), "USDC");
     console.log("Gas paid by sender:", "Yes");
 
     // トランザクションの確認を待つ
