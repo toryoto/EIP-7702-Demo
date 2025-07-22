@@ -16,6 +16,14 @@ contract MinimalEIP7702Delegate {
     event CallExecuted(address indexed target, uint256 value, bytes data, bool success);
     event BatchExecuted(uint256 totalCalls);
 
+    modifier onlyAuthorized() virtual {
+        require(
+            msg.sender == address(this),
+            "not from self or EntryPoint"
+        );
+        _;
+    }
+
     /**
      * @dev 単一のコントラクト呼び出しを実行
      * @param target 呼び出し先アドレス
@@ -26,7 +34,7 @@ contract MinimalEIP7702Delegate {
         address target,
         uint256 value,
         bytes calldata data
-    ) external {
+    ) external onlyAuthorized {
         if (target == address(0)) {
             revert InvalidTarget();
         }
@@ -44,7 +52,7 @@ contract MinimalEIP7702Delegate {
      * @dev 複数のコントラクト呼び出しをバッチ実行
      * @param calls 実行するCall配列
      */
-    function executeBatch(Call[] calldata calls) external {
+    function executeBatch(Call[] calldata calls) external onlyAuthorized {
         uint256 callsLength = calls.length;
         
         if (callsLength == 0) {
