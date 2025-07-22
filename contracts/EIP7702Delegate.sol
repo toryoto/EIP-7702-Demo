@@ -16,9 +16,14 @@ contract MinimalEIP7702Delegate {
     event CallExecuted(address indexed target, uint256 value, bytes data, bool success);
     event BatchExecuted(uint256 totalCalls);
 
+    function entryPoint() public pure override returns (IEntryPoint) {
+        return IEntryPoint(0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108);
+    }
+
     modifier onlyAuthorized() virtual {
         require(
-            msg.sender == address(this),
+            msg.sender == address(this) ||
+            msg.sender == address(entryPoint()),
             "not from self or EntryPoint"
         );
         _;
